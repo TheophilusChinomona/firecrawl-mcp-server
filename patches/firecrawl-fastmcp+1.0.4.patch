@@ -1,0 +1,13 @@
+diff --git a/node_modules/firecrawl-fastmcp/dist/FastMCP.js b/node_modules/firecrawl-fastmcp/dist/FastMCP.js
+index 6976e4a..7f7c6f3 100644
+--- a/node_modules/firecrawl-fastmcp/dist/FastMCP.js
++++ b/node_modules/firecrawl-fastmcp/dist/FastMCP.js
+@@ -776,7 +776,7 @@ ${error instanceof Error ? error.stack : JSON.stringify(error)}`
+             return {
+               annotations: tool.annotations,
+               description: tool.description,
+-              inputSchema: tool.parameters ? await toJsonSchema(tool.parameters) : {
++              inputSchema: tool.parameters ? (({ $schema, ...rest }) => rest)(await toJsonSchema(tool.parameters)) : {
+                 additionalProperties: false,
+                 properties: {},
+                 type: "object"

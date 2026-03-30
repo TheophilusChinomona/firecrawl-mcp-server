@@ -1,6 +1,10 @@
 // src/custom-tools/brand-audit.ts
 // Custom tool: firecrawl_brand_audit
 // Scrapes rawHtml + screenshot → extracts colours, fonts, logos → structured JSON.
+//
+// Screenshot fallback: if the first scrape (with screenshot) fails for any reason,
+// a second scrape without screenshot is attempted. This adds one extra API call on
+// failure paths — acceptable given NFR5 (5s overhead) applies to the happy path.
 
 import { z } from 'zod';
 import type { MCP, SessionData } from './types.js';
@@ -29,7 +33,9 @@ function normaliseHex(hex: string): string {
 }
 
 function rgbToHex(r: number, g: number, b: number): string {
-  return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+  // Clamp each channel to 0–255 before converting to avoid malformed hex strings
+  const clamp = (v: number) => Math.min(255, Math.max(0, v));
+  return '#' + [r, g, b].map(v => clamp(v).toString(16).padStart(2, '0')).join('').toUpperCase();
 }
 
 function extractColours(html: string): { colours: string[]; rawCount: number } {
@@ -75,7 +81,15 @@ function extractFontFamilies(html: string): string[] {
     // Split on comma, clean up each family name
     for (const part of raw.split(',')) {
       const name = part.trim().replace(/^['"]|['"]$/g, '');
-      if (name && !name.toLowerCase().includes('inherit') && !name.toLowerCase().includes('initial')) {
+      // Skip CSS variable references (var(--font-*)) and other non-name tokens
+      if (
+        name &&
+        !name.toLowerCase().includes('inherit') &&
+        !name.toLowerCase().includes('initial') &&
+        !name.includes('(') &&
+        !name.includes(')') &&
+        !name.includes('${')
+      ) {
         seen.add(name);
       }
     }
@@ -89,13 +103,21 @@ function extractLogos(html: string, baseUrl: string): string[] {
   for (const match of html.matchAll(imgPattern)) {
     const src = match[0];
     const url = match[1];
-    // Heuristic: logo in filename, svg, or small dimensions mentioned, or alt contains logo
+    // Skip non-http schemes (data: URIs, javascript:, blob:)
+    if (!url || url.startsWith('data:') || url.startsWith('javascript:') || url.startsWith('blob:')) {
+      continue;
+    }
+    // Heuristic: logo in filename, svg, or alt contains logo
     const isLikelyLogo =
       /logo|brand|icon/i.test(url) ||
       url.endsWith('.svg') ||
       /alt=["'][^"']*logo[^"']*["']/i.test(src);
     if (isLikelyLogo) {
-      logos.push(url.startsWith('http') ? url : new URL(url, baseUrl).href);
+      try {
+        logos.push(url.startsWith('http') ? url : new URL(url, baseUrl).href);
+      } catch {
+        // Malformed URL — skip
+      }
     }
   }
   return [...new Set(logos)].slice(0, 10);
@@ -106,14 +128,25 @@ function extractFavicons(html: string, baseUrl: string): string[] {
   const pattern = /<link[^>]+rel=["'][^"']*(?:icon|apple-touch-icon)[^"']*["'][^>]*href=["']([^"']+)["']/gi;
   for (const match of html.matchAll(pattern)) {
     const href = match[1];
-    favicons.push(href.startsWith('http') ? href : new URL(href, baseUrl).href);
+    if (!href || href.startsWith('data:') || href.startsWith('javascript:')) {
+      continue;
+    }
+    try {
+      favicons.push(href.startsWith('http') ? href : new URL(href, baseUrl).href);
+    } catch {
+      // Malformed URL — skip
+    }
   }
   return [...new Set(favicons)];
 }
 
 function extractOgImage(html: string): string | null {
-  const match = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
-    ?? html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+  // Use separate double-quote and single-quote patterns to avoid truncation on apostrophes
+  const match =
+    html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/i) ??
+    html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:image"/i) ??
+    html.match(/<meta[^>]+property='og:image'[^>]+content='([^']+)'/i) ??
+    html.match(/<meta[^>]+content='([^']+)'[^>]+property='og:image'/i);
   return match?.[1] ?? null;
 }
 

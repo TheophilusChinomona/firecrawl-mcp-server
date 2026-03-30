@@ -9,7 +9,6 @@
 // Do NOT modify src/index.ts for new tools — only this barrel needs updating.
 
 import type { MCP } from './types.js';
-import { register as registerExample } from './example.js';
 
 import { register as registerResearch } from './research.js';
 import { register as registerEnrich } from './enrich.js';
@@ -22,7 +21,6 @@ import { register as registerSeoAudit } from './seo-audit.js';
  * Called once from src/index.ts after all stock tools are registered.
  */
 export function registerCustomTools(server: MCP): void {
-  registerExample(server);
   registerResearch(server);
   registerEnrich(server);
   registerMonitor(server);

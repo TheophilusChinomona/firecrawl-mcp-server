@@ -47,6 +47,15 @@ async function scrapeUrl(
   }
 }
 
+function safeSlice(content: string, maxLen: number): string {
+  if (content.length <= maxLen) return content;
+  // Trim to last whitespace boundary to avoid splitting mid-word or mid-surrogate-pair
+  const sliced = content.slice(0, maxLen).replace(/[\uD800-\uDBFF]$/, '');
+  const lastSpace = sliced.lastIndexOf(' ');
+  return (lastSpace > maxLen - 100 ? sliced.slice(0, lastSpace) : sliced) +
+    '\n\n*(content truncated — use firecrawl_scrape on this URL for full content)*';
+}
+
 function formatOutput(query: string, sources: ResearchSource[]): string {
   const successful = sources.filter(s => !s.error);
   const failed = sources.filter(s => s.error);
@@ -70,14 +79,7 @@ function formatOutput(query: string, sources: ResearchSource[]): string {
       lines.push(`**Summary:** ${s.description}`);
     }
     lines.push('');
-    // Truncate content to avoid overwhelming the calling agent's context window.
-    // Agent can use firecrawl_scrape on specific URLs for full content.
-    const excerpt =
-      s.content.length > 2000
-        ? s.content.slice(0, 2000) +
-          '\n\n*(content truncated — use firecrawl_scrape on this URL for full content)*'
-        : s.content;
-    lines.push(excerpt);
+    lines.push(safeSlice(s.content, 2000));
     lines.push('');
     lines.push(`*Citation: [${s.title}](${s.url})*`);
     lines.push('');
@@ -146,8 +148,7 @@ Research a topic by searching the web and scraping top results into a single cit
         webResults = searchData.web ?? [];
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
-        const apiUrl = process.env.FIRECRAWL_API_URL ?? 'unknown';
-        return `# Research: ${query}\n\n**Error:** Search failed — ${message}\n\nCheck that the Firecrawl instance is reachable at ${apiUrl}.`;
+        return `# Research: ${query}\n\n**Error:** Search failed — ${message}\n\nCheck that the Firecrawl instance is reachable.`;
       }
 
       if (webResults.length === 0) {
@@ -155,8 +156,13 @@ Research a topic by searching the web and scraping top results into a single cit
       }
 
       // Step 2: Scrape all results in parallel (per-URL error isolation)
+      // Filter out any results missing a valid URL before scraping
+      const validResults = webResults
+        .slice(0, limit)
+        .filter(r => typeof r.url === 'string' && r.url.length > 0);
+
       const sources = await Promise.all(
-        webResults.slice(0, limit).map(result =>
+        validResults.map(result =>
           scrapeUrl(client, result.url, result.title ?? result.url, result.description ?? '')
         )
       );

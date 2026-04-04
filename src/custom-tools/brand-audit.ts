@@ -24,21 +24,21 @@ interface BrandAuditResult {
   extraction_notes: string[];
 }
 
-function normaliseHex(hex: string): string {
-  // Expand #RGB to #RRGGBB
+export function normaliseHex(hex: string): string {
+  // Expand #RGB to #RRGGBB, always uppercase
   if (hex.length === 4) {
-    return '#' + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3];
+    return ('#' + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3]).toUpperCase();
   }
   return hex.toUpperCase();
 }
 
-function rgbToHex(r: number, g: number, b: number): string {
+export function rgbToHex(r: number, g: number, b: number): string {
   // Clamp each channel to 0–255 before converting to avoid malformed hex strings
   const clamp = (v: number) => Math.min(255, Math.max(0, v));
   return '#' + [r, g, b].map(v => clamp(v).toString(16).padStart(2, '0')).join('').toUpperCase();
 }
 
-function extractColours(html: string): { colours: string[]; rawCount: number } {
+export function extractColours(html: string): { colours: string[]; rawCount: number } {
   const counts = new Map<string, number>();
 
   // Match hex colours
@@ -73,7 +73,7 @@ function extractColours(html: string): { colours: string[]; rawCount: number } {
   return { colours: filtered, rawCount };
 }
 
-function extractFontFamilies(html: string): string[] {
+export function extractFontFamilies(html: string): string[] {
   const seen = new Set<string>();
   const pattern = /font-family\s*:\s*([^;}"']+)/gi;
   for (const match of html.matchAll(pattern)) {
@@ -97,7 +97,7 @@ function extractFontFamilies(html: string): string[] {
   return [...seen].slice(0, 10);
 }
 
-function extractLogos(html: string, baseUrl: string): string[] {
+export function extractLogos(html: string, baseUrl: string): string[] {
   const logos: string[] = [];
   const imgPattern = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
   for (const match of html.matchAll(imgPattern)) {
@@ -123,7 +123,7 @@ function extractLogos(html: string, baseUrl: string): string[] {
   return [...new Set(logos)].slice(0, 10);
 }
 
-function extractFavicons(html: string, baseUrl: string): string[] {
+export function extractFavicons(html: string, baseUrl: string): string[] {
   const favicons: string[] = [];
   const pattern = /<link[^>]+rel=["'][^"']*(?:icon|apple-touch-icon)[^"']*["'][^>]*href=["']([^"']+)["']/gi;
   for (const match of html.matchAll(pattern)) {
@@ -140,7 +140,7 @@ function extractFavicons(html: string, baseUrl: string): string[] {
   return [...new Set(favicons)];
 }
 
-function extractOgImage(html: string): string | null {
+export function extractOgImage(html: string): string | null {
   // Use separate double-quote and single-quote patterns to avoid truncation on apostrophes
   const match =
     html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/i) ??

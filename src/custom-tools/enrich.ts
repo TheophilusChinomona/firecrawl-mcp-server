@@ -20,7 +20,7 @@ interface EnrichResult {
   error?: string;
 }
 
-function buildSearchQuery(
+export function buildSearchQuery(
   email?: string,
   companyName?: string
 ): { query: string; emailDomain: string | null } {
@@ -39,7 +39,7 @@ function buildSearchQuery(
   return { query: '', emailDomain: null };
 }
 
-function extractProfile(
+export function extractProfile(
   metadata: { title?: string; description?: string; url?: string } | undefined,
   content: string,
   emailDomain: string | null,

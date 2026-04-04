@@ -46,7 +46,7 @@ interface SeoAuditResult {
   issues: string[];
 }
 
-function extractMeta(rawHtml: string, firecrawlMeta: Record<string, string | undefined>): SeoAuditResult['meta'] {
+export function extractMeta(rawHtml: string, firecrawlMeta: Record<string, string | undefined>): SeoAuditResult['meta'] {
   // Use separate double-quote and single-quote patterns to avoid truncation on apostrophes in values
   const getMetaDouble = (pattern: RegExp): string | null => rawHtml.match(pattern)?.[1] ?? null;
 
@@ -93,7 +93,7 @@ function extractMeta(rawHtml: string, firecrawlMeta: Record<string, string | und
   };
 }
 
-function extractHeaders(markdown: string): SeoAuditResult['headers'] {
+export function extractHeaders(markdown: string): SeoAuditResult['headers'] {
   const h1: string[] = [];
   const h2: string[] = [];
   const h3: string[] = [];
@@ -125,7 +125,7 @@ function extractHeaders(markdown: string): SeoAuditResult['headers'] {
   };
 }
 
-function partitionLinks(
+export function partitionLinks(
   links: Array<{ url: string }>,
   pageHostname: string
 ): { internal: string[]; external: string[] } {
@@ -147,7 +147,7 @@ function partitionLinks(
   return { internal, external };
 }
 
-function countWords(markdown: string): number {
+export function countWords(markdown: string): number {
   // Strip Markdown syntax before counting to avoid inflating word count with URLs,
   // heading markers, and code fence contents
   const cleaned = markdown
@@ -160,7 +160,7 @@ function countWords(markdown: string): number {
   return cleaned.split(/\s+/).filter(Boolean).length;
 }
 
-function detectIssues(result: Omit<SeoAuditResult, 'issues'>): string[] {
+export function detectIssues(result: Omit<SeoAuditResult, 'issues'>): string[] {
   const issues: string[] = [];
 
   if (!result.meta.title) issues.push('Missing <title> tag');

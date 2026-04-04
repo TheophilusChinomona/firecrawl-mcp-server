@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import dotenv from 'dotenv';
+import { createRequire } from 'module';
 import { FastMCP, type Logger } from 'firecrawl-fastmcp';
 import { z } from 'zod';
 import FirecrawlApp from '@mendable/firecrawl-js';
@@ -7,6 +8,17 @@ import type { IncomingHttpHeaders } from 'http';
 import { registerCustomTools } from './custom-tools/index.js';
 
 dotenv.config({ debug: false, quiet: true });
+
+const _require = createRequire(import.meta.url);
+const { version: SERVER_VERSION } = _require('../package.json') as { version: string };
+
+// Suppress cosmetic zod-to-json-schema warnings that don't affect MCP functionality
+// (e.g. "OpenAI may not support records in schemas", regex pattern conversions)
+const _origWarn = console.warn;
+console.warn = (...args: unknown[]) => {
+  if (typeof args[0] === 'string' && /OpenAI may not support|Could not convert regex pattern|Recursive reference detected/.test(args[0])) return;
+  _origWarn.apply(console, args);
+};
 
 interface SessionData {
   firecrawlApiKey?: string;
@@ -85,9 +97,17 @@ class ConsoleLogger implements Logger {
   }
 }
 
+// Startup guard: validate env vars before creating the server
+if (process.env.CLOUD_SERVICE !== 'true') {
+  if (!process.env.FIRECRAWL_API_KEY && !process.env.FIRECRAWL_API_URL) {
+    console.error('Either FIRECRAWL_API_KEY or FIRECRAWL_API_URL must be provided');
+    process.exit(1);
+  }
+}
+
 const server = new FastMCP<SessionData>({
   name: 'firecrawl-fastmcp',
-  version: '3.0.0',
+  version: SERVER_VERSION,
   logger: new ConsoleLogger(),
   roots: { enabled: false },
   authenticate: async (request: {
@@ -101,13 +121,7 @@ const server = new FastMCP<SessionData>({
       }
       return { firecrawlApiKey: apiKey };
     } else {
-      // For self-hosted instances, API key is optional if FIRECRAWL_API_URL is provided
-      if (!process.env.FIRECRAWL_API_KEY && !process.env.FIRECRAWL_API_URL) {
-        console.error(
-          'Either FIRECRAWL_API_KEY or FIRECRAWL_API_URL must be provided'
-        );
-        process.exit(1);
-      }
+      // Self-hosted: env vars already validated at startup
       return { firecrawlApiKey: process.env.FIRECRAWL_API_KEY };
     }
   },

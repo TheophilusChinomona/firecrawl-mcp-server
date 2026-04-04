@@ -18,7 +18,7 @@ interface ResearchSource {
   error?: string;
 }
 
-async function scrapeUrl(
+export async function scrapeUrl(
   client: ReturnType<typeof createClient>,
   url: string,
   title: string,
@@ -47,7 +47,7 @@ async function scrapeUrl(
   }
 }
 
-function safeSlice(content: string, maxLen: number): string {
+export function safeSlice(content: string, maxLen: number): string {
   if (content.length <= maxLen) return content;
   // Trim to last whitespace boundary to avoid splitting mid-word or mid-surrogate-pair
   const sliced = content.slice(0, maxLen).replace(/[\uD800-\uDBFF]$/, '');
@@ -56,7 +56,7 @@ function safeSlice(content: string, maxLen: number): string {
     '\n\n*(content truncated — use firecrawl_scrape on this URL for full content)*';
 }
 
-function formatOutput(query: string, sources: ResearchSource[]): string {
+export function formatOutput(query: string, sources: ResearchSource[]): string {
   const successful = sources.filter(s => !s.error);
   const failed = sources.filter(s => s.error);
 

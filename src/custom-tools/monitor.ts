@@ -31,11 +31,11 @@ interface DiffResult {
   error?: string;
 }
 
-function getDataDir(): string {
+export function getDataDir(): string {
   return process.env.MONITOR_DATA_DIR ?? path.join(process.cwd(), '.monitor-baselines');
 }
 
-function urlToFilename(url: string): string {
+export function urlToFilename(url: string): string {
   return crypto.createHash('sha256').update(url).digest('hex') + '.json';
 }
 
@@ -71,7 +71,7 @@ function saveBaseline(baseline: Baseline): void {
   fs.renameSync(tmpPath, finalPath);
 }
 
-function diffContent(oldContent: string, newContent: string): { added: string[]; removed: string[]; summary: string } {
+export function diffContent(oldContent: string, newContent: string): { added: string[]; removed: string[]; summary: string } {
   const toLines = (content: string) => content.split('\n').map(l => l.trim()).filter(Boolean);
 
   // Use multisets (Map<line, count>) so duplicate-count changes are detected.
@@ -201,13 +201,13 @@ Monitor a URL for content changes by comparing against a stored baseline.
       const result: DiffResult = {
         status: hasChanges ? 'changed' : 'unchanged',
         url,
-        label: label ?? existing.label,
+        label: label || existing.label,
         baseline_captured_at: existing.capturedAt,
         current_captured_at: now,
         diff,
       };
       try {
-        saveBaseline({ url, label: label ?? existing.label, capturedAt: now, content: currentContent });
+        saveBaseline({ url, label: label || existing.label, capturedAt: now, content: currentContent });
       } catch {
         // Write failed — return the diff anyway, note baseline was not updated
         result.error = 'Warning: diff computed but baseline not updated (write failed)';

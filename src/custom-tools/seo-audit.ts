@@ -21,6 +21,7 @@ interface SeoAuditResult {
     twitter_card: string | null;
   };
   headers: {
+    // h1/h2/h3 are capped at 20 items each (sample). h1_count/h2_count/h3_count are the true totals.
     h1: string[];
     h2: string[];
     h3: string[];
@@ -46,34 +47,37 @@ interface SeoAuditResult {
 }
 
 function extractMeta(rawHtml: string, firecrawlMeta: Record<string, string | undefined>): SeoAuditResult['meta'] {
-  const getMetaContent = (pattern: RegExp): string | null => {
-    const match = rawHtml.match(pattern);
-    return match?.[1] ?? null;
-  };
+  // Use separate double-quote and single-quote patterns to avoid truncation on apostrophes in values
+  const getMetaDouble = (pattern: RegExp): string | null => rawHtml.match(pattern)?.[1] ?? null;
 
-  const title = firecrawlMeta['title'] ?? getMetaContent(/<title[^>]*>([^<]+)<\/title>/i);
+  const title = firecrawlMeta['title'] ?? getMetaDouble(/<title[^>]*>([^<]+)<\/title>/i);
   const description =
     firecrawlMeta['description'] ??
-    getMetaContent(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i) ??
-    getMetaContent(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i);
+    getMetaDouble(/<meta[^>]+name="description"[^>]+content="([^"]+)"/i) ??
+    getMetaDouble(/<meta[^>]+content="([^"]+)"[^>]+name="description"/i) ??
+    getMetaDouble(/<meta[^>]+name='description'[^>]+content='([^']+)'/i) ??
+    getMetaDouble(/<meta[^>]+content='([^']+)'[^>]+name='description'/i);
 
   const ogTitle =
     firecrawlMeta['ogTitle'] ??
-    getMetaContent(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i);
+    getMetaDouble(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/i) ??
+    getMetaDouble(/<meta[^>]+content="([^"]+)"[^>]+property="og:title"/i);
   const ogDescription =
     firecrawlMeta['ogDescription'] ??
-    getMetaContent(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i);
+    getMetaDouble(/<meta[^>]+property="og:description"[^>]+content="([^"]+)"/i) ??
+    getMetaDouble(/<meta[^>]+content="([^"]+)"[^>]+property="og:description"/i);
   const ogImage =
     firecrawlMeta['ogImage'] ??
-    getMetaContent(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i);
+    getMetaDouble(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/i) ??
+    getMetaDouble(/<meta[^>]+content="([^"]+)"[^>]+property="og:image"/i);
 
-  const canonical = getMetaContent(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i);
+  const canonical = getMetaDouble(/<link[^>]+rel="canonical"[^>]+href="([^"]+)"/i);
   const robots =
-    getMetaContent(/<meta[^>]+name=["']robots["'][^>]+content=["']([^"']+)["']/i) ??
-    getMetaContent(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']robots["']/i);
+    getMetaDouble(/<meta[^>]+name="robots"[^>]+content="([^"]+)"/i) ??
+    getMetaDouble(/<meta[^>]+content="([^"]+)"[^>]+name="robots"/i);
   const twitterCard =
-    getMetaContent(/<meta[^>]+name=["']twitter:card["'][^>]+content=["']([^"']+)["']/i) ??
-    getMetaContent(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:card["']/i);
+    getMetaDouble(/<meta[^>]+name="twitter:card"[^>]+content="([^"]+)"/i) ??
+    getMetaDouble(/<meta[^>]+content="([^"]+)"[^>]+name="twitter:card"/i);
 
   return {
     title: title ?? null,
@@ -93,8 +97,16 @@ function extractHeaders(markdown: string): SeoAuditResult['headers'] {
   const h1: string[] = [];
   const h2: string[] = [];
   const h3: string[] = [];
+  let inCodeBlock = false;
 
   for (const line of markdown.split('\n')) {
+    // Track fenced code blocks to avoid matching shebangs (#!/usr/bin/env) as H1 headings
+    if (line.startsWith('```')) {
+      inCodeBlock = !inCodeBlock;
+      continue;
+    }
+    if (inCodeBlock) continue;
+
     const h1Match = line.match(/^# (.+)$/);
     const h2Match = line.match(/^## (.+)$/);
     const h3Match = line.match(/^### (.+)$/);
@@ -133,6 +145,19 @@ function partitionLinks(
     }
   }
   return { internal, external };
+}
+
+function countWords(markdown: string): number {
+  // Strip Markdown syntax before counting to avoid inflating word count with URLs,
+  // heading markers, and code fence contents
+  const cleaned = markdown
+    .replace(/```[\s\S]*?```/g, '')           // fenced code blocks
+    .replace(/`[^`]+`/g, '')                   // inline code
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')  // links — keep link text, drop URL
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, '')      // images
+    .replace(/^#{1,6}\s/gm, '')               // heading markers
+    .replace(/[*_~]+/g, '');                   // bold/italic/strikethrough markers
+  return cleaned.split(/\s+/).filter(Boolean).length;
 }
 
 function detectIssues(result: Omit<SeoAuditResult, 'issues'>): string[] {
@@ -182,7 +207,7 @@ Extract SEO signals from any webpage — meta tags, header hierarchy, link count
 }
 \`\`\`
 
-**Returns:** Structured JSON — meta tags with lengths, header hierarchy (H1/H2/H3 text and counts), link partition (internal vs external), word count, structured data flag, detected SEO issues list, and optionally site map page count.
+**Returns:** Structured JSON — meta tags with lengths, header hierarchy (H1/H2/H3 text sample + true counts), link partition (internal vs external), word count, structured data flag, detected SEO issues list, and optionally site map page count.
 `,
     parameters: z.object({
       url: z.string().url().describe('URL of the page to audit'),
@@ -231,11 +256,17 @@ Extract SEO signals from any webpage — meta tags, header hierarchy, link count
       }
 
       // Step 2: Extract signals
-      const pageHostname = new URL(url).hostname;
+      let pageHostname: string;
+      try {
+        pageHostname = new URL(url).hostname;
+      } catch {
+        pageHostname = url;
+      }
+
       const meta = extractMeta(rawHtml, firecrawlMeta);
       const headers = extractHeaders(markdown);
       const { internal, external } = partitionLinks(links, pageHostname);
-      const wordCount = markdown.split(/\s+/).filter(Boolean).length;
+      const wordCount = countWords(markdown);
       const hasStructuredData = /application\/ld\+json|schema\.org/i.test(rawHtml);
 
       const partial: Omit<SeoAuditResult, 'issues'> = {
@@ -258,13 +289,16 @@ Extract SEO signals from any webpage — meta tags, header hierarchy, link count
       if (includeMap) {
         try {
           const mapData = await (client as any).map(url, { limit: 500 });
-          const urls: string[] = Array.isArray(mapData) ? mapData : (mapData as any).links ?? [];
+          // Self-hosted Firecrawl returns { urls: [] }; cloud may return { links: [] } or a bare array
+          const urls: string[] = Array.isArray(mapData)
+            ? mapData
+            : (mapData as any).urls ?? (mapData as any).links ?? [];
           result.site_map = {
             total_pages: urls.length,
             sample_urls: urls.slice(0, 20),
           };
         } catch {
-          // Map failed — non-fatal, omit site_map from result
+          issues.push('Site map unavailable — map call failed');
         }
       }
 

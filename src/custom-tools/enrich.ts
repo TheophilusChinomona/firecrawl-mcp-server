@@ -24,7 +24,8 @@ function buildSearchQuery(
   email?: string,
   companyName?: string
 ): { query: string; emailDomain: string | null } {
-  const emailDomain = email ? (email.split('@')[1] ?? null) : null;
+  // Use slice(-1)[0] to always take the last @-segment — handles sub-addressed and multi-@ emails
+  const emailDomain = email ? (email.split('@').slice(-1)[0] ?? null) : null;
 
   if (companyName && emailDomain) {
     return { query: `${companyName} ${emailDomain} company website`, emailDomain };
@@ -44,7 +45,8 @@ function extractProfile(
   emailDomain: string | null,
   sourceUrl: string
 ): EnrichResult['company'] {
-  const name = metadata?.title?.replace(/\s*[-|].*$/, '').trim() ?? null;
+  // Use || null so that an empty string after stripping title decorators returns null, not ""
+  const name = metadata?.title?.replace(/\s*[-|].*$/, '').trim() || null;
   const description = metadata?.description ?? null;
 
   const industryKeywords: [RegExp, string][] = [
@@ -104,6 +106,7 @@ Enrich a lead by discovering and scraping their company profile from the web.
     parameters: z.object({
       email: z
         .string()
+        .email()
         .optional()
         .describe('Email address to enrich (e.g. john@acme.com) — used to extract company domain'),
       companyName: z
@@ -147,7 +150,6 @@ Enrich a lead by discovering and scraping their company profile from the web.
         searchResults = searchData.web ?? [];
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
-        const apiUrl = process.env.FIRECRAWL_API_URL ?? 'unknown';
         const result: EnrichResult = {
           enrichment_status: 'not_found',
           company: {
@@ -159,7 +161,7 @@ Enrich a lead by discovering and scraping their company profile from the web.
           },
           source: null,
           sources_searched: [],
-          error: `Search failed — ${message}. Check Firecrawl is reachable at ${apiUrl}.`,
+          error: `Search failed — ${message}`,
         };
         return JSON.stringify(result, null, 2);
       }

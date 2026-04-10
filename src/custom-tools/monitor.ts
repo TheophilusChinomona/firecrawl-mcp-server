@@ -47,7 +47,16 @@ function loadBaseline(url: string): Baseline | null {
   const filePath = getBaselinePath(url);
   try {
     const raw = fs.readFileSync(filePath, 'utf-8');
-    return JSON.parse(raw) as Baseline;
+    const parsed = JSON.parse(raw);
+    // Runtime validation — cast is not enough
+    if (
+      typeof parsed?.url !== 'string' ||
+      typeof parsed?.capturedAt !== 'string' ||
+      typeof parsed?.content !== 'string'
+    ) {
+      return null;
+    }
+    return parsed as Baseline;
   } catch {
     return null;
   }
@@ -56,15 +65,32 @@ function loadBaseline(url: string): Baseline | null {
 function saveBaseline(baseline: Baseline): void {
   const dir = getDataDir();
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(getBaselinePath(baseline.url), JSON.stringify(baseline, null, 2), 'utf-8');
+  const finalPath = getBaselinePath(baseline.url);
+  const tmpPath = finalPath + '.tmp';
+  fs.writeFileSync(tmpPath, JSON.stringify(baseline, null, 2), 'utf-8');
+  fs.renameSync(tmpPath, finalPath);
 }
 
 function diffContent(oldContent: string, newContent: string): { added: string[]; removed: string[]; summary: string } {
-  const oldLines = new Set(oldContent.split('\n').map(l => l.trim()).filter(Boolean));
-  const newLines = new Set(newContent.split('\n').map(l => l.trim()).filter(Boolean));
+  const toLines = (content: string) => content.split('\n').map(l => l.trim()).filter(Boolean);
 
-  const added = [...newLines].filter(l => !oldLines.has(l));
-  const removed = [...oldLines].filter(l => !newLines.has(l));
+  // Use multisets (Map<line, count>) so duplicate-count changes are detected.
+  // Reordering is intentionally ignored — only truly new/deleted content is reported.
+  const oldCounts = new Map<string, number>();
+  const newCounts = new Map<string, number>();
+  for (const l of toLines(oldContent)) oldCounts.set(l, (oldCounts.get(l) ?? 0) + 1);
+  for (const l of toLines(newContent)) newCounts.set(l, (newCounts.get(l) ?? 0) + 1);
+
+  const allLines = new Set([...oldCounts.keys(), ...newCounts.keys()]);
+  const added: string[] = [];
+  const removed: string[] = [];
+
+  for (const line of allLines) {
+    const oldCount = oldCounts.get(line) ?? 0;
+    const newCount = newCounts.get(line) ?? 0;
+    for (let i = 0; i < newCount - oldCount; i++) added.push(line);
+    for (let i = 0; i < oldCount - newCount; i++) removed.push(line);
+  }
 
   const summary = added.length === 0 && removed.length === 0
     ? 'No textual changes detected.'
@@ -131,11 +157,35 @@ Monitor a URL for content changes by comparing against a stored baseline.
         return JSON.stringify(result, null, 2);
       }
 
+      // Guard: empty content from a paywalled/blocked page must not overwrite a real baseline
+      if (!currentContent.trim()) {
+        const existing = loadBaseline(url);
+        const result: DiffResult = {
+          status: 'error',
+          url,
+          label,
+          baseline_captured_at: existing?.capturedAt,
+          error: 'Scrape returned empty content — baseline preserved. Page may be paywalled, JS-heavy, or blocked.',
+        };
+        return JSON.stringify(result, null, 2);
+      }
+
       const existing = loadBaseline(url);
 
       if (!existing) {
         // First call — establish baseline
-        saveBaseline({ url, label, capturedAt: now, content: currentContent });
+        try {
+          saveBaseline({ url, label, capturedAt: now, content: currentContent });
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          const result: DiffResult = {
+            status: 'error',
+            url,
+            label,
+            error: `Baseline could not be saved — ${message}`,
+          };
+          return JSON.stringify(result, null, 2);
+        }
         const result: DiffResult = {
           status: 'baseline_established',
           url,
@@ -147,8 +197,6 @@ Monitor a URL for content changes by comparing against a stored baseline.
 
       // Subsequent call — diff and update
       const diff = diffContent(existing.content, currentContent);
-      saveBaseline({ url, label: label ?? existing.label, capturedAt: now, content: currentContent });
-
       const hasChanges = diff.added.length > 0 || diff.removed.length > 0;
       const result: DiffResult = {
         status: hasChanges ? 'changed' : 'unchanged',
@@ -158,6 +206,12 @@ Monitor a URL for content changes by comparing against a stored baseline.
         current_captured_at: now,
         diff,
       };
+      try {
+        saveBaseline({ url, label: label ?? existing.label, capturedAt: now, content: currentContent });
+      } catch {
+        // Write failed — return the diff anyway, note baseline was not updated
+        result.error = 'Warning: diff computed but baseline not updated (write failed)';
+      }
       return JSON.stringify(result, null, 2);
     },
   });

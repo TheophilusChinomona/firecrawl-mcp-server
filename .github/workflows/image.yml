@@ -9,6 +9,10 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   push-image:
     runs-on: ubuntu-latest
@@ -32,6 +36,6 @@ jobs:
           context: .
           file: ./Dockerfile.service
           push: true
-          tags: ghcr.io/firecrawl/firecrawl-mcp-server:latest
-          cache-from: type=registry,ref=ghcr.io/firecrawl/firecrawl-mcp-server:latest
+          tags: ghcr.io/theophiluschinomona/firecrawl-mcp-server:latest
+          cache-from: type=registry,ref=ghcr.io/theophiluschinomona/firecrawl-mcp-server:latest
           cache-to: type=inline

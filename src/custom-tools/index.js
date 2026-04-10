@@ -7,27 +7,23 @@
 //   3. Call: register<ToolName>(server); inside registerCustomTools()
 //
 // Do NOT modify src/index.ts for new tools — only this barrel needs updating.
-
-import type { MCP } from './types.js';
 import { register as registerExample } from './example.js';
-
 import { register as registerResearch } from './research.js';
 import { register as registerEnrich } from './enrich.js';
 import { register as registerMonitor } from './monitor.js';
 import { register as registerBrandAudit } from './brand-audit.js';
 import { register as registerSeoAudit } from './seo-audit.js';
 import { register as registerHeygen } from './heygen.js';
-
 /**
  * Registers all custom Firecrawl MCP tools onto the server.
  * Called once from src/index.ts after all stock tools are registered.
  */
-export function registerCustomTools(server: MCP): void {
-  registerExample(server);
-  registerResearch(server);
-  registerEnrich(server);
-  registerMonitor(server);
-  registerBrandAudit(server);
-  registerSeoAudit(server);
-  registerHeygen(server);
+export function registerCustomTools(server) {
+    registerExample(server);
+    registerResearch(server);
+    registerEnrich(server);
+    registerMonitor(server);
+    registerBrandAudit(server);
+    registerSeoAudit(server);
+    registerHeygen(server);
 }

@@ -1,0 +1,190 @@
+// src/custom-tools/enrich.ts
+// Custom tool: firecrawl_enrich
+// Chains: search (company discovery) → scrape (profile extraction) → structured JSON with source attribution.
+import { z } from 'zod';
+import { createClient } from './client.js';
+function buildSearchQuery(email, companyName) {
+    const emailDomain = email ? (email.split('@')[1] ?? null) : null;
+    if (companyName && emailDomain) {
+        return { query: `${companyName} ${emailDomain} company website`, emailDomain };
+    }
+    if (companyName) {
+        return { query: `${companyName} company website`, emailDomain };
+    }
+    if (emailDomain) {
+        return { query: `${emailDomain} company about`, emailDomain };
+    }
+    return { query: '', emailDomain: null };
+}
+function extractProfile(metadata, content, emailDomain, sourceUrl) {
+    const name = metadata?.title?.replace(/\s*[-|].*$/, '').trim() ?? null;
+    const description = metadata?.description ?? null;
+    const industryKeywords = [
+        [/\b(software|saas|tech|technology|platform|api)\b/i, 'Technology'],
+        [/\b(marketing|advertising|agency|seo|brand)\b/i, 'Marketing'],
+        [/\b(finance|fintech|banking|investment|payments)\b/i, 'Finance'],
+        [/\b(health|healthcare|medical|pharma|wellness)\b/i, 'Healthcare'],
+        [/\b(e-commerce|ecommerce|retail|shop|store)\b/i, 'Retail / E-Commerce'],
+        [/\b(logistics|shipping|supply chain|freight)\b/i, 'Logistics'],
+        [/\b(legal|law|attorney|compliance)\b/i, 'Legal'],
+        [/\b(education|edtech|learning|university|school)\b/i, 'Education'],
+        [/\b(real estate|property|realty)\b/i, 'Real Estate'],
+    ];
+    let industry = null;
+    const combinedText = `${name ?? ''} ${description ?? ''} ${content.slice(0, 1000)}`;
+    for (const [pattern, label] of industryKeywords) {
+        if (pattern.test(combinedText)) {
+            industry = label;
+            break;
+        }
+    }
+    return {
+        name,
+        website: metadata?.url ?? sourceUrl,
+        description,
+        industry,
+        email_domain: emailDomain,
+    };
+}
+export function register(server) {
+    server.addTool({
+        name: 'firecrawl_enrich',
+        description: `
+Enrich a lead by discovering and scraping their company profile from the web.
+
+**How it works:** Accepts an email address and/or company name → searches for the company website → scrapes the homepage → returns a structured JSON profile with industry, description, and source attribution.
+
+**Best for:** Lead enrichment workflows where you have an email or company name and need company profile data.
+**Not for:** Full-site crawls (use firecrawl_crawl). Multi-source research (use firecrawl_research).
+
+**Usage Example:**
+\`\`\`json
+{
+  "name": "firecrawl_enrich",
+  "arguments": {
+    "email": "john@acme.com",
+    "companyName": "Acme Corp"
+  }
+}
+\`\`\`
+
+**Returns:** Structured JSON — enrichment_status, company profile (name, website, description, industry, email_domain), source URL scraped, and all URLs found in search.
+`,
+        parameters: z.object({
+            email: z
+                .string()
+                .optional()
+                .describe('Email address to enrich (e.g. john@acme.com) — used to extract company domain'),
+            companyName: z
+                .string()
+                .min(1)
+                .optional()
+                .describe('Company name to enrich (e.g. Acme Corp) — used as primary search term'),
+        }),
+        execute: async (args, context) => {
+            const { session } = context;
+            const { email, companyName } = args;
+            // Validate: at least one input required
+            if (!email && !companyName) {
+                const result = {
+                    enrichment_status: 'not_found',
+                    company: {
+                        name: null,
+                        website: null,
+                        description: null,
+                        industry: null,
+                        email_domain: null,
+                    },
+                    source: null,
+                    sources_searched: [],
+                    error: 'At least one of email or companyName must be provided.',
+                };
+                return JSON.stringify(result, null, 2);
+            }
+            const client = createClient(session);
+            const { query, emailDomain } = buildSearchQuery(email, companyName);
+            // Step 1: Search for company website
+            let searchResults = [];
+            try {
+                const searchData = (await client.search(query, {
+                    limit: 3,
+                    sources: [{ type: 'web' }],
+                }));
+                searchResults = searchData.web ?? [];
+            }
+            catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                const apiUrl = process.env.FIRECRAWL_API_URL ?? 'unknown';
+                const result = {
+                    enrichment_status: 'not_found',
+                    company: {
+                        name: null,
+                        website: null,
+                        description: null,
+                        industry: null,
+                        email_domain: emailDomain,
+                    },
+                    source: null,
+                    sources_searched: [],
+                    error: `Search failed — ${message}. Check Firecrawl is reachable at ${apiUrl}.`,
+                };
+                return JSON.stringify(result, null, 2);
+            }
+            if (searchResults.length === 0) {
+                const result = {
+                    enrichment_status: 'not_found',
+                    company: {
+                        name: null,
+                        website: null,
+                        description: null,
+                        industry: null,
+                        email_domain: emailDomain,
+                    },
+                    source: null,
+                    sources_searched: [],
+                    error: `No search results found for query: "${query}"`,
+                };
+                return JSON.stringify(result, null, 2);
+            }
+            const sourcesSearched = searchResults.map(r => r.url);
+            const topResult = searchResults[0];
+            // Step 2: Scrape top result for profile data
+            let scraped;
+            try {
+                const raw = await client.scrape(topResult.url, {
+                    formats: ['markdown'],
+                    onlyMainContent: true,
+                });
+                scraped = raw;
+            }
+            catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                // Scrape failed — return partial enrichment using search result metadata
+                const result = {
+                    enrichment_status: 'partial',
+                    company: {
+                        name: topResult.title ?? null,
+                        website: topResult.url,
+                        description: topResult.description ?? null,
+                        industry: null,
+                        email_domain: emailDomain,
+                    },
+                    source: topResult.url,
+                    sources_searched: sourcesSearched,
+                    error: `Scrape failed (partial data from search metadata) — ${message}`,
+                };
+                return JSON.stringify(result, null, 2);
+            }
+            // Step 3: Extract profile and return
+            const company = extractProfile(scraped.metadata, scraped.markdown ?? '', emailDomain, topResult.url);
+            const hasData = company.name || company.description || company.industry;
+            const result = {
+                enrichment_status: hasData ? 'full' : 'partial',
+                company,
+                source: topResult.url,
+                sources_searched: sourcesSearched,
+            };
+            return JSON.stringify(result, null, 2);
+        },
+    });
+}

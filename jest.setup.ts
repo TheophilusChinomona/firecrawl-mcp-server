@@ -1,72 +1,27 @@
+// @ts-nocheck
 import { jest } from '@jest/globals';
-import FirecrawlApp from '@mendable/firecrawl-js';
-import type {
-  SearchResponse,
-  BatchScrapeResponse,
-  BatchScrapeStatusResponse,
-  FirecrawlDocument,
-} from '@mendable/firecrawl-js';
 
 // Set test timeout
 jest.setTimeout(30000);
 
-// Create mock responses
-const mockSearchResponse: SearchResponse = {
-  success: true,
-  data: [
-    {
-      url: 'https://example.com',
-      title: 'Test Page',
-      description: 'Test Description',
-      markdown: '# Test Content',
-      actions: null as never,
-    },
-  ] as FirecrawlDocument<undefined, never>[],
-};
-
-const mockBatchScrapeResponse: BatchScrapeResponse = {
-  success: true,
-  id: 'test-batch-id',
-};
-
-const mockBatchStatusResponse: BatchScrapeStatusResponse = {
-  success: true,
-  status: 'completed',
-  completed: 1,
-  total: 1,
-  creditsUsed: 1,
-  expiresAt: new Date(),
-  data: [
-    {
-      url: 'https://example.com',
-      title: 'Test Page',
-      description: 'Test Description',
-      markdown: '# Test Content',
-      actions: null as never,
-    },
-  ] as FirecrawlDocument<undefined, never>[],
-};
-
-// Create mock instance methods
-const mockSearch = jest.fn().mockImplementation(async () => mockSearchResponse);
-const mockAsyncBatchScrapeUrls = jest
-  .fn()
-  .mockImplementation(async () => mockBatchScrapeResponse);
-const mockCheckBatchScrapeStatus = jest
-  .fn()
-  .mockImplementation(async () => mockBatchStatusResponse);
-
-// Create mock instance
-const mockInstance = {
-  apiKey: 'test-api-key',
-  apiUrl: 'test-api-url',
-  search: mockSearch,
-  asyncBatchScrapeUrls: mockAsyncBatchScrapeUrls,
-  checkBatchScrapeStatus: mockCheckBatchScrapeStatus,
-};
-
-// Mock the module
+// Mock firecrawl-js so tests don't make real network calls.
+// The type exports (SearchResponse, FirecrawlDocument, etc.) were removed in
+// newer SDK versions — mock the constructor and key methods generically.
 jest.mock('@mendable/firecrawl-js', () => ({
   __esModule: true,
-  default: jest.fn().mockImplementation(() => mockInstance),
+  default: jest.fn().mockImplementation(() => ({
+    apiKey: 'test-api-key',
+    apiUrl: 'test-api-url',
+    scrapeUrl: jest.fn().mockResolvedValue({ success: true, markdown: '# Test' }),
+    search: jest.fn().mockResolvedValue({ success: true, data: [] }),
+    crawlUrl: jest.fn().mockResolvedValue({ success: true, id: 'test-crawl-id' }),
+    asyncBatchScrapeUrls: jest.fn().mockResolvedValue({ success: true, id: 'test-batch-id' }),
+    checkBatchScrapeStatus: jest.fn().mockResolvedValue({
+      success: true,
+      status: 'completed',
+      completed: 1,
+      total: 1,
+      data: [],
+    }),
+  })),
 }));

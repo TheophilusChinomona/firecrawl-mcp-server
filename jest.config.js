@@ -15,4 +15,5 @@ export default {
   },
   testMatch: ['**/*.test.ts'],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
+  forceExit: true,
 };

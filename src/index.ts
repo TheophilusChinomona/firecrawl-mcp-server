@@ -1169,4 +1169,12 @@ if (
   };
 }
 
+// Exit when the parent process closes stdin (gateway session ended)
+// Without this, the node process sits idle forever and accumulates as zombies
+if (args.transportType === 'stdio') {
+  process.stdin.on('close', () => process.exit(0));
+  process.stdin.on('end', () => process.exit(0));
+  process.on('SIGPIPE', () => process.exit(0));
+}
+
 await server.start(args);

@@ -16,6 +16,8 @@ import { register as registerFireEnrichEmail } from './fire-enrich-email.js';
 import { register as registerMonitor } from './monitor.js';
 import { register as registerBrandAudit } from './brand-audit.js';
 import { register as registerSeoAudit } from './seo-audit.js';
+import { register as registerAgent } from './agent.js';
+import { register as registerAgentStatus } from './agent-status.js';
 
 /**
  * Registers all custom Firecrawl MCP tools onto the server.
@@ -38,4 +40,6 @@ export function registerCustomTools(server: MCP): void {
   if (allow('firecrawl_monitor')) registerMonitor(server);
   if (allow('firecrawl_brand_audit')) registerBrandAudit(server);
   if (allow('firecrawl_seo_audit')) registerSeoAudit(server);
+  if (allow('firecrawl_agent')) registerAgent(server);
+  if (allow('firecrawl_agent_status')) registerAgentStatus(server);
 }
